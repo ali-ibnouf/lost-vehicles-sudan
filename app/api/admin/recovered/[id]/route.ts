@@ -8,12 +8,14 @@ import { supabase } from '@/lib/supabase'
 // PATCH - تحديث عربية مسترجعة
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
+
     const authHeader = request.headers.get('authorization')
     const expectedToken = `Bearer ${process.env.ADMIN_SECRET}`
-    
+
     if (!authHeader || authHeader !== expectedToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -36,46 +38,38 @@ export async function PATCH(
 
     if (recovery_status) {
       updateData.recovery_status = recovery_status
-      
-      // إذا تم الاسترجاع، سجل التاريخ
-      if (recovery_status === 'recovered' && !updateData.recovery_date) {
+
+      if (recovery_status === 'recovered') {
         updateData.recovery_date = new Date().toISOString()
       }
     }
 
-    if (recovery_location !== undefined) {
+    if (recovery_location !== undefined)
       updateData.recovery_location = recovery_location
-    }
 
-    if (recovery_notes !== undefined) {
+    if (recovery_notes !== undefined)
       updateData.recovery_notes = recovery_notes
-    }
 
-    if (ownership_verified !== undefined) {
+    if (ownership_verified !== undefined)
       updateData.ownership_verified = ownership_verified
-    }
 
-    if (documents_checked !== undefined) {
+    if (documents_checked !== undefined)
       updateData.documents_checked = documents_checked
-    }
 
     if (reward_paid !== undefined) {
       updateData.reward_paid = reward_paid
-      
-      // إذا تم الدفع، سجل التاريخ
       if (reward_paid) {
         updateData.reward_paid_date = new Date().toISOString()
       }
     }
 
-    if (reward_recipient !== undefined) {
+    if (reward_recipient !== undefined)
       updateData.reward_recipient = reward_recipient
-    }
 
     const { data, error } = await supabase
       .from('recovered_vehicles')
       .update(updateData)
-      .eq('id', params.id)
+      .eq('id', id)
       .select()
       .single()
 
@@ -96,12 +90,14 @@ export async function PATCH(
 // GET - الحصول على عربية واحدة
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
+
     const authHeader = request.headers.get('authorization')
     const expectedToken = `Bearer ${process.env.ADMIN_SECRET}`
-    
+
     if (!authHeader || authHeader !== expectedToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -109,12 +105,13 @@ export async function GET(
     const { data, error } = await supabase
       .from('recovered_vehicles')
       .select('*')
-      .eq('id', params.id)
+      .eq('id', id)
       .single()
 
     if (error) throw error
 
     return NextResponse.json({ vehicle: data })
+
   } catch (error) {
     console.error('Get vehicle error:', error)
     return NextResponse.json({ error: 'Failed to fetch' }, { status: 500 })
