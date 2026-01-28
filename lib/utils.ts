@@ -15,24 +15,38 @@ export function normalizeDigits(input?: string): string {
 // التحقق من صحة رقم الواتساب السوداني
 export function validateWhatsApp(phone: string): boolean {
   const cleaned = normalizeDigits(phone)
-  // السودان: 249 + 9 أرقام (يبدأ بـ 9)
-  // أو: 0 + 9 أرقام (محلي)
-  return /^(249)?9\d{8}$/.test(cleaned) || /^09\d{8}$/.test(cleaned)
+  
+  // السودان: 10 أرقام تبدأ بـ 0 ثم أي رقم
+  // أمثلة: 0912345678 (Zain), 0123456789 (Sudani), 0923456789 (MTN)
+  if (/^0\d{9}$/.test(cleaned)) {
+    return true
+  }
+  
+  // أو: 249 + 9 أرقام (الصيغة الدولية)
+  // أمثلة: 249912345678 (Zain), 249123456789 (Sudani)
+  if (/^249\d{9}$/.test(cleaned)) {
+    return true
+  }
+  
+  return false
 }
 
 // تنسيق رقم الواتساب للعرض
 export function formatWhatsApp(phone: string): string {
   const cleaned = normalizeDigits(phone)
   
+  // إذا كان بصيغة دولية (249...)
   if (cleaned.startsWith('249')) {
     return `+${cleaned}`
   }
   
-  if (cleaned.startsWith('0')) {
+  // إذا كان بصيغة محلية (0...)
+  if (cleaned.startsWith('0') && cleaned.length === 10) {
     return `+249${cleaned.slice(1)}`
   }
   
-  if (cleaned.startsWith('9') && cleaned.length === 9) {
+  // إذا كان بدون 0 أو 249
+  if (cleaned.length === 9) {
     return `+249${cleaned}`
   }
   
