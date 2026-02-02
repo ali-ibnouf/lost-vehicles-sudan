@@ -115,6 +115,9 @@ export default function AdminPage() {
           >
             تسجيل خروج
           </Button>
+          <Button onClick={() => window.location.href = '/admin/upload'}>
+  📤 رفع كشوفات
+</Button>
         </div>
 
         {/* Upload Form */}
