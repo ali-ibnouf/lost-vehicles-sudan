@@ -1,9 +1,10 @@
 // ===================================
 // الملف: app/api/admin/recovered/route.ts
+// محدث - يستخدم createAdminClient
 // ===================================
 
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { createAdminClient } from '@/lib/supabase'
 import { normalizeDigits, validateWhatsApp } from '@/lib/utils'
 
 // GET - الحصول على العربات المسترجعة
@@ -16,6 +17,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const supabase = createAdminClient()
     const { searchParams } = new URL(request.url)
     const status = searchParams.get('status')
     const limit = searchParams.get('limit') || '50'
@@ -51,6 +53,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const supabase = createAdminClient()
     const body = await request.json()
     const {
       owner_whatsapp,

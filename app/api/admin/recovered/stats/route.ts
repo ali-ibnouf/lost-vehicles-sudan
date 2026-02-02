@@ -1,9 +1,10 @@
 // ===================================
 // الملف: app/api/admin/recovered/stats/route.ts
+// محدث - يستخدم createAdminClient
 // ===================================
 
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { createAdminClient } from '@/lib/supabase'
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,6 +14,8 @@ export async function GET(request: NextRequest) {
     if (!authHeader || authHeader !== expectedToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const supabase = createAdminClient()
 
     // استدعاء function الإحصائيات من Database
     const { data, error } = await supabase.rpc('get_recovery_stats')

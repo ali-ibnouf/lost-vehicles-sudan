@@ -1,9 +1,10 @@
 // ===================================
 // الملف: app/api/admin/recovered/[id]/route.ts
+// محدث - يستخدم createAdminClient
 // ===================================
 
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { createAdminClient } from '@/lib/supabase'
 
 // PATCH - تحديث عربية مسترجعة
 export async function PATCH(
@@ -20,6 +21,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const supabase = createAdminClient()
     const body = await request.json()
     const {
       recovery_status,
@@ -101,6 +103,8 @@ export async function GET(
     if (!authHeader || authHeader !== expectedToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const supabase = createAdminClient()
 
     const { data, error } = await supabase
       .from('recovered_vehicles')
