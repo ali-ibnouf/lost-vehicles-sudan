@@ -1,12 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { Upload, CheckCircle2, AlertCircle, Eye, Save, X } from 'lucide-react'
+import { Upload, CheckCircle2, AlertCircle, Eye, Save, X, Phone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { supabase } from '@/lib/supabase'
-import { parseVehicleList, previewParsedVehicles, checkDuplicates, type ParseResult, type ParsedVehicle } from '@/lib/parsers/vehicle-list-parser'
+import { parseVehicleList, type ParseResult } from '@/lib/parsers/vehicle-list-parser'
 
 export default function AdminUploadPage() {
   const [rawText, setRawText] = useState('')
@@ -14,6 +15,7 @@ export default function AdminUploadPage() {
   const [loading, setLoading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 })
   const [showPreview, setShowPreview] = useState(false)
+  const [manualContact, setManualContact] = useState('')
 
   // معالجة النص
   const handleParse = () => {
@@ -26,8 +28,13 @@ export default function AdminUploadPage() {
     setParseResult(result)
     setShowPreview(true)
 
+    // إذا تم استخراج رقم تلقائياً، ضعه في الحقل اليدوي
+    if (result.contact_number && !manualContact) {
+      setManualContact(result.contact_number)
+    }
+
     if (!result.success) {
-      alert('فشلت المعالجة: ' + result.errors.join('\n'))
+      alert('تحذير: ' + result.errors.slice(0, 3).join('\n'))
     }
   }
 
@@ -38,14 +45,9 @@ export default function AdminUploadPage() {
       return
     }
 
-    // التحقق من التكرار داخل الكشف
-    const duplicates = checkDuplicates(parseResult.vehicles)
-    if (duplicates.length > 0) {
-      const proceed = confirm(
-        `تحذير: يوجد ${duplicates.length} تكرار في الكشف:\n\n` +
-        duplicates.slice(0, 5).join('\n') +
-        '\n\nهل تريد المتابعة؟'
-      )
+    const contactNumber = manualContact || parseResult.contact_number
+    if (!contactNumber) {
+      const proceed = confirm('لم يتم العثور على رقم المسؤول. هل تريد المتابعة بدون رقم؟')
       if (!proceed) return
     }
 
@@ -57,7 +59,6 @@ export default function AdminUploadPage() {
       let errorCount = 0
       const errors: string[] = []
 
-      // رفع العربات واحدة تلو الأخرى
       for (let i = 0; i < parseResult.vehicles.length; i++) {
         const vehicle = parseResult.vehicles[i]
         
@@ -72,13 +73,12 @@ export default function AdminUploadPage() {
               plate_digits: vehicle.plate_digits || null,
               color: vehicle.color || null,
               extra_details: vehicle.extra_details,
-              source: 'admin_upload',
-              uploaded_by: 'admin',
+              source: parseResult.list_name || 'admin_upload',
+              uploaded_by: contactNumber || 'admin',
               uploaded_at: new Date().toISOString()
             })
 
           if (error) {
-            // تحقق من التكرار
             if (error.code === '23505') {
               errors.push(`السطر ${vehicle.line_number}: شاسي ${vehicle.chassis_digits} موجود مسبقاً`)
             } else {
@@ -96,8 +96,7 @@ export default function AdminUploadPage() {
         setUploadProgress({ current: i + 1, total: parseResult.vehicles.length })
       }
 
-      // عرض النتيجة
-      let message = `تم الرفع بنجاح!\n\n`
+      let message = `تم الرفع!\n\n`
       message += `✅ نجح: ${successCount}\n`
       if (errorCount > 0) {
         message += `❌ فشل: ${errorCount}\n\n`
@@ -108,14 +107,17 @@ export default function AdminUploadPage() {
           }
         }
       }
+      if (contactNumber) {
+        message += `\n\n📞 رقم المسؤول: ${contactNumber}`
+      }
 
       alert(message)
 
-      // إعادة تعيين النموذج
       if (successCount > 0) {
         setRawText('')
         setParseResult(null)
         setShowPreview(false)
+        setManualContact('')
       }
 
     } catch (error: any) {
@@ -130,14 +132,13 @@ export default function AdminUploadPage() {
 
 1/ هايس تايوتا (ابيض) شاسي 200046160
 2/ شاسي 00172844 لوحة 52938 خ1
-3/ افانتي سحلية (ابيض) شاسي 285102
-4/ مضلع (ابيض) شاسي 694749
-5/ شريحة تايوتا قبة (ابيض) شاسي 0067794`
+3/ دبدوب (ابيض) شاسي 047837
+
+تواصل واتساب 0999773431`
 
   return (
     <div className="min-h-screen bg-gray-50 p-4" dir="rtl">
       <div className="container max-w-7xl mx-auto py-8">
-        {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-3xl font-bold">رفع كشوفات العربات الموجودة</h1>
@@ -146,9 +147,6 @@ export default function AdminUploadPage() {
           <div className="flex gap-3">
             <Button onClick={() => window.location.href = '/admin'} variant="outline">
               رجوع
-            </Button>
-            <Button onClick={() => window.location.href = '/admin/requests'} variant="outline">
-              الطلبات
             </Button>
           </div>
         </div>
@@ -172,7 +170,7 @@ export default function AdminUploadPage() {
                     value={rawText}
                     onChange={(e) => setRawText(e.target.value)}
                     placeholder={exampleText}
-                    rows={20}
+                    rows={15}
                     className="font-mono text-sm"
                   />
                 </div>
@@ -187,7 +185,12 @@ export default function AdminUploadPage() {
                     معالجة ومعاينة
                   </Button>
                   <Button 
-                    onClick={() => setRawText('')}
+                    onClick={() => {
+                      setRawText('')
+                      setParseResult(null)
+                      setShowPreview(false)
+                      setManualContact('')
+                    }}
                     variant="outline"
                     disabled={loading}
                   >
@@ -195,12 +198,14 @@ export default function AdminUploadPage() {
                   </Button>
                 </div>
 
-                {/* Example */}
                 <div className="p-4 bg-blue-50 rounded-lg text-sm">
-                  <p className="font-medium mb-2">مثال على الصيغة المدعومة:</p>
-                  <pre className="text-xs whitespace-pre-wrap text-gray-700">
-                    {exampleText}
-                  </pre>
+                  <p className="font-medium mb-2">💡 نصائح:</p>
+                  <ul className="space-y-1 text-gray-700 text-xs">
+                    <li>• الصق الكشف كاملاً (مع رقم المسؤول)</li>
+                    <li>• يتعرف تلقائياً على: الشاسي، اللوحة، اللون</li>
+                    <li>• يدعم اللوحات بالحروف: "خ 12345" أو "12345 خ ع"</li>
+                    <li>• يستخرج رقم المسؤول تلقائياً</li>
+                  </ul>
                 </div>
               </CardContent>
             </Card>
@@ -210,6 +215,44 @@ export default function AdminUploadPage() {
           <div className="space-y-6">
             {showPreview && parseResult && (
               <>
+                {/* Contact Info */}
+                {(parseResult.contact_number || parseResult.list_name) && (
+                  <Card className="border-blue-200 bg-blue-50">
+                    <CardContent className="p-4 space-y-2">
+                      {parseResult.list_name && (
+                        <div className="text-sm">
+                          <span className="font-medium">📋 الكشف:</span> {parseResult.list_name}
+                        </div>
+                      )}
+                      {parseResult.contact_number && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <Phone className="w-4 h-4 text-blue-600" />
+                          <span className="font-medium">رقم المسؤول:</span>
+                          <span className="text-blue-700 font-mono">{parseResult.contact_number}</span>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Manual Contact Input */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">رقم المسؤول (اختياري)</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <Input
+                      value={manualContact}
+                      onChange={(e) => setManualContact(e.target.value)}
+                      placeholder="0999773431 أو +249999773431"
+                      className="font-mono"
+                    />
+                    <p className="text-xs text-gray-500 mt-2">
+                      سيتم استخدامه في حقل "uploaded_by"
+                    </p>
+                  </CardContent>
+                </Card>
+
                 {/* Stats */}
                 <div className="grid grid-cols-3 gap-4">
                   <Card>
@@ -239,10 +282,10 @@ export default function AdminUploadPage() {
                 </div>
 
                 {/* Errors */}
-                {parseResult.errors.length > 0 && (
-                  <Card className="border-red-200">
+                {parseResult.errors.length > 0 && parseResult.errors.length < 50 && (
+                  <Card className="border-amber-200">
                     <CardHeader>
-                      <CardTitle className="flex items-center gap-2 text-red-600">
+                      <CardTitle className="flex items-center gap-2 text-amber-600 text-base">
                         <AlertCircle className="w-5 h-5" />
                         تحذيرات ({parseResult.errors.length})
                       </CardTitle>
@@ -250,7 +293,7 @@ export default function AdminUploadPage() {
                     <CardContent>
                       <div className="space-y-1 max-h-40 overflow-y-auto">
                         {parseResult.errors.slice(0, 10).map((error, i) => (
-                          <p key={i} className="text-sm text-red-600">• {error}</p>
+                          <p key={i} className="text-sm text-amber-700">• {error}</p>
                         ))}
                         {parseResult.errors.length > 10 && (
                           <p className="text-sm text-gray-500">
@@ -276,8 +319,8 @@ export default function AdminUploadPage() {
                         <div key={i} className="p-3 bg-gray-50 rounded-lg text-sm">
                           <p className="font-bold">{vehicle.car_name}</p>
                           <p className="text-gray-600">شاسي: {vehicle.chassis_digits}</p>
-                          {vehicle.plate_digits && (
-                            <p className="text-gray-600">لوحة: {vehicle.plate_digits}</p>
+                          {vehicle.plate_full && (
+                            <p className="text-gray-600">لوحة: {vehicle.plate_full}</p>
                           )}
                           {vehicle.color && (
                             <p className="text-gray-600">اللون: {vehicle.color}</p>
@@ -291,7 +334,6 @@ export default function AdminUploadPage() {
                       )}
                     </div>
 
-                    {/* Save Button */}
                     <div className="mt-6">
                       <Button 
                         onClick={handleSave}
@@ -316,51 +358,6 @@ export default function AdminUploadPage() {
                   </CardContent>
                 </Card>
               </>
-            )}
-
-            {/* Instructions */}
-            {!showPreview && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>كيفية الاستخدام</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3 text-sm">
-                  <div className="flex gap-3">
-                    <div className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
-                      1
-                    </div>
-                    <p>الصق الكشف الكامل في الصندوق على اليسار</p>
-                  </div>
-                  <div className="flex gap-3">
-                    <div className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
-                      2
-                    </div>
-                    <p>اضغط "معالجة ومعاينة" لتحليل البيانات</p>
-                  </div>
-                  <div className="flex gap-3">
-                    <div className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
-                      3
-                    </div>
-                    <p>راجع المعاينة وتأكد من صحة البيانات</p>
-                  </div>
-                  <div className="flex gap-3">
-                    <div className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
-                      4
-                    </div>
-                    <p>اضغط "حفظ" لإضافة العربات إلى قاعدة البيانات</p>
-                  </div>
-
-                  <div className="mt-6 p-4 bg-yellow-50 rounded-lg">
-                    <p className="font-medium text-yellow-800 mb-2">ملاحظات هامة:</p>
-                    <ul className="space-y-1 text-yellow-700 text-xs">
-                      <li>• النظام يتعرف تلقائياً على اسم العربية، رقم الشاسي، اللوحة واللون</li>
-                      <li>• يمكن لصق أي صيغة من الكشوفات (مع أو بدون ترقيم)</li>
-                      <li>• سيتم تخطي السطور الفارغة والعناوين تلقائياً</li>
-                      <li>• في حالة التكرار، سيتم تنبيهك قبل الحفظ</li>
-                    </ul>
-                  </div>
-                </CardContent>
-              </Card>
             )}
           </div>
         </div>
