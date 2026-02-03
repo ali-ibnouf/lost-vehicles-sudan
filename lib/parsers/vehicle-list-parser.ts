@@ -1,6 +1,6 @@
 // ===================================
-// الملف: lib/parsers/vehicle-list-parser.ts
-// Parser لمعالجة كشوفات العربات
+// lib/parsers/vehicle-list-parser.ts
+// Parser محدث - مع رقم المسؤول واسم الكشف
 // ===================================
 
 export type ParsedVehicle = {
@@ -19,6 +19,8 @@ export type ParseResult = {
   success: boolean
   vehicles: ParsedVehicle[]
   errors: string[]
+  contact_number?: string  // ✅ رقم المسؤول
+  list_name?: string       // ✅ اسم الكشف
   stats: {
     total_lines: number
     parsed: number
@@ -31,12 +33,53 @@ function normalizeDigits(input: string): string {
   return input.replace(/[^0-9]/g, '')
 }
 
+// ✅ استخراج رقم المسؤول
+function extractContactNumber(text: string): string | null {
+  const patterns = [
+    /(?:تواصل|واتساب|اتصال|رقم|للتواصل|موبايل|جوال)[:\s]*([+0-9]{10,14})/i,
+    /\b(0[0-9]{9})\b/,
+    /\b(249[0-9]{9})\b/,
+    /\b(\+249[0-9]{9})\b/
+  ]
+  
+  for (const pattern of patterns) {
+    const match = text.match(pattern)
+    if (match) {
+      const number = match[1].replace(/\s+/g, '')
+      const digits = normalizeDigits(number)
+      if (digits.length >= 10) {
+        return number
+      }
+    }
+  }
+  
+  return null
+}
+
+// ✅ استخراج اسم الكشف
+function extractListName(text: string): string | null {
+  const patterns = [
+    /كشف\s*[:\s]*\(?([A-Z0-9]+)\)?/i,
+    /قائمة\s*[:\s]*([^\n]+)/i,
+    /الكشف\s*رقم\s*([A-Z0-9]+)/i
+  ]
+  
+  for (const pattern of patterns) {
+    const match = text.match(pattern)
+    if (match) {
+      return match[1].trim()
+    }
+  }
+  
+  return null
+}
+
 // استخراج الألوان
 function extractColor(text: string): string | undefined {
   const colors = [
     'ابيض', 'أبيض', 'اسود', 'أسود', 'احمر', 'أحمر',
     'ازرق', 'أزرق', 'اخضر', 'أخضر', 'سلفر', 'بني',
-    'رمادي', 'بيج', 'سحلية', 'قبة'
+    'رمادي', 'بيج', 'سحلية', 'قبة', 'ذهبي', 'فضي'
   ]
   
   for (const color of colors) {
@@ -47,9 +90,8 @@ function extractColor(text: string): string | undefined {
   return undefined
 }
 
-// استخراج رقم الشاسي
+// استخراج رقم الشاسي - محسّن
 function extractChassis(text: string): { full?: string; digits: string } | null {
-  // البحث عن "شاسي" متبوعة برقم
   const chassisMatch = text.match(/شاسي[:\s]*([0-9A-Za-z]+)/i)
   if (chassisMatch) {
     const full = chassisMatch[1].trim()
@@ -59,66 +101,102 @@ function extractChassis(text: string): { full?: string; digits: string } | null 
     }
   }
   
-  // البحث عن رقم طويل (محتمل شاسي)
-  const longNumberMatch = text.match(/\b\d{6,}\b/)
-  if (longNumberMatch) {
-    const digits = normalizeDigits(longNumberMatch[0])
+  const longNumbers = text.match(/\b\d{6,}\b/g)
+  if (longNumbers && longNumbers.length > 0) {
+    const longest = longNumbers.sort((a, b) => b.length - a.length)[0]
+    const digits = normalizeDigits(longest)
     if (digits.length >= 6) {
-      return { full: longNumberMatch[0], digits }
+      return { full: longest, digits }
+    }
+  }
+  
+  const anyNumber = text.match(/\d{4,}/g)
+  if (anyNumber && anyNumber.length > 0) {
+    const longest = anyNumber.sort((a, b) => b.length - a.length)[0]
+    const digits = normalizeDigits(longest)
+    if (digits.length >= 4) {
+      return { full: longest, digits }
     }
   }
   
   return null
 }
 
-// استخراج رقم اللوحة
+// استخراج رقم اللوحة - محسّن
 function extractPlate(text: string): { full?: string; digits: string } | null {
-  // البحث عن "لوحة" متبوعة برقم
-  const plateMatch = text.match(/لوحة[:\s]*([0-9]+)\s*([أ-ي]*[0-9]*)/i)
-  if (plateMatch) {
-    const full = `${plateMatch[1]} ${plateMatch[2]}`.trim()
-    const digits = normalizeDigits(plateMatch[1])
+  const plateMatch1 = text.match(/لوحة[:\s]*([0-9]+)\s*([أ-ي\s]*)/i)
+  if (plateMatch1) {
+    const number = plateMatch1[1]
+    const letters = plateMatch1[2]?.trim() || ''
+    const full = letters ? `${number} ${letters}` : number
+    const digits = normalizeDigits(number)
     if (digits.length >= 3) {
       return { full, digits }
     }
   }
   
-  // البحث عن نمط "رقم خ رقم" (مثل: 52938 خ1)
-  const khMatch = text.match(/(\d{4,})\s*خ\s*(\d)/i)
-  if (khMatch) {
-    const full = `${khMatch[1]} خ${khMatch[2]}`
-    const digits = normalizeDigits(khMatch[1])
+  const plateMatch2 = text.match(/(\d{3,})\s*([أ-ي]+)\s*([أ-ي]*)/i)
+  if (plateMatch2) {
+    const number = plateMatch2[1]
+    const letter1 = plateMatch2[2]
+    const letter2 = plateMatch2[3] || ''
+    const full = letter2 ? `${number} ${letter1} ${letter2}` : `${number} ${letter1}`
+    const digits = normalizeDigits(number)
     return { full, digits }
   }
   
-  // البحث عن نمط "رقم ب ح رقم" (مثل: 30310 ب ح8)
-  const bhMatch = text.match(/(\d{4,})\s*ب\s*ح\s*(\d)/i)
-  if (bhMatch) {
-    const full = `${bhMatch[1]} ب ح${bhMatch[2]}`
-    const digits = normalizeDigits(bhMatch[1])
+  const plateMatch3 = text.match(/([أ-ي]+)\s*(\d{3,})/i)
+  if (plateMatch3) {
+    const letter = plateMatch3[1]
+    const number = plateMatch3[2]
+    const full = `${letter} ${number}`
+    const digits = normalizeDigits(number)
+    return { full, digits }
+  }
+  
+  const plateMatch4 = text.match(/(\d{4,})\s*ب\s*ح\s*(\d)/i)
+  if (plateMatch4) {
+    const full = `${plateMatch4[1]} ب ح${plateMatch4[2]}`
+    const digits = normalizeDigits(plateMatch4[1])
     return { full, digits }
   }
   
   return null
 }
 
-// استخراج اسم العربية
+// استخراج اسم العربية - محسّن
 function extractCarName(text: string): string {
-  // إزالة رقم السطر من البداية (1/, 2/, إلخ)
-  let cleaned = text.replace(/^\d+[\/\-)]\s*/, '').trim()
+  let cleaned = text.replace(/^\d+[\/\-)\.]?\s*/, '').trim()
   
-  // إزالة المعلومات الإضافية (شاسي، لوحة، ألوان)
   cleaned = cleaned
     .replace(/شاسي[:\s]*[0-9A-Za-z]+/gi, '')
     .replace(/لوحة[:\s]*[0-9أ-ي\s]+/gi, '')
-    .replace(/\([^)]*\)/g, '') // إزالة الألوان بين الأقواس
+    .replace(/\d{3,}\s*[أ-ي]+(\s*[أ-ي]+)?/g, '')
+    .replace(/[أ-ي]+\s*\d{3,}/g, '')
     .trim()
   
-  // أخذ أول جزء فقط (عادة اسم العربية)
-  const parts = cleaned.split(/\s+/)
-  const carName = parts.slice(0, 3).join(' ').trim()
+  cleaned = cleaned.replace(/\([^)]*\)/g, '').trim()
+  cleaned = cleaned.replace(/\b\d{6,}\b/g, '').trim()
   
-  return carName || 'غير محدد'
+  const words = cleaned.split(/\s+/).filter(w => w.length > 0)
+  const carName = words.slice(0, 4).join(' ').trim()
+  
+  if (!carName || carName.length < 2) {
+    const beforeNumbers = text.split(/\d{4,}/)[0]
+    const cleaned2 = beforeNumbers
+      .replace(/^\d+[\/\-)\.]?\s*/, '')
+      .replace(/\([^)]*\)/g, '')
+      .replace(/شاسي|لوحة/gi, '')
+      .trim()
+    
+    if (cleaned2 && cleaned2.length >= 2) {
+      return cleaned2
+    }
+    
+    return 'غير محدد'
+  }
+  
+  return carName
 }
 
 /**
@@ -142,29 +220,32 @@ export function parseVehicleList(input: string): ParseResult {
     return result
   }
   
+  // ✅ استخراج رقم المسؤول واسم الكشف
+  result.contact_number = extractContactNumber(input)
+  result.list_name = extractListName(input)
+  
   const lines = input.split('\n').filter(line => line.trim())
   result.stats.total_lines = lines.length
   
   lines.forEach((line, index) => {
     const trimmed = line.trim()
     
-    // تخطي السطور الفارغة أو العناوين
     if (!trimmed || 
+        trimmed.length < 5 ||
         trimmed.startsWith('كشف') || 
-        trimmed.startsWith('تواصل') ||
-        trimmed.length < 5) {
+        /(?:تواصل|واتساب|اتصال|رقم|للتواصل|موبايل|جوال)/i.test(trimmed) ||
+        trimmed.startsWith('ملاحظة') ||
+        /^[-=_#*]+$/.test(trimmed)) {
       result.stats.skipped++
       return
     }
     
     try {
-      // استخراج المعلومات
       const chassis = extractChassis(trimmed)
       const plate = extractPlate(trimmed)
       const color = extractColor(trimmed)
       const carName = extractCarName(trimmed)
       
-      // يجب أن يكون هناك شاسي على الأقل
       if (!chassis || chassis.digits.length < 4) {
         result.errors.push(`السطر ${index + 1}: لم يتم العثور على رقم شاسي صحيح`)
         result.stats.skipped++
@@ -197,7 +278,9 @@ export function parseVehicleList(input: string): ParseResult {
   
   if (result.vehicles.length === 0) {
     result.success = false
-    result.errors.push('لم يتم معالجة أي عربية')
+    if (result.errors.length === 0) {
+      result.errors.push('لم يتم معالجة أي عربية')
+    }
   }
   
   return result
@@ -212,8 +295,8 @@ export function previewParsedVehicles(vehicles: ParsedVehicle[]): string {
   vehicles.slice(0, 5).forEach((v, i) => {
     preview += `${i + 1}. ${v.car_name}\n`
     preview += `   شاسي: ${v.chassis_digits}\n`
-    if (v.plate_digits) {
-      preview += `   لوحة: ${v.plate_digits}\n`
+    if (v.plate_full) {
+      preview += `   لوحة: ${v.plate_full}\n`
     }
     if (v.color) {
       preview += `   اللون: ${v.color}\n`
@@ -235,7 +318,7 @@ export function checkDuplicates(vehicles: ParsedVehicle[]): string[] {
   const duplicates: string[] = []
   const seen = new Set<string>()
   
-  vehicles.forEach((v, index) => {
+  vehicles.forEach((v) => {
     const key = v.chassis_digits
     if (seen.has(key)) {
       duplicates.push(`السطر ${v.line_number}: شاسي مكرر ${v.chassis_digits}`)
