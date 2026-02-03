@@ -211,47 +211,51 @@ export function parseVehicleList(input: string): ParseResult {
       total_lines: 0,
       parsed: 0,
       skipped: 0
-    }
+    },
+    contact_number: undefined,
+    list_name: undefined
   }
-  
+
   if (!input || !input.trim()) {
     result.success = false
     result.errors.push('النص فارغ')
     return result
   }
-  
-  // ✅ استخراج رقم المسؤول واسم الكشف
+
+  // استخراج رقم المسؤول واسم الكشف
   result.contact_number = extractContactNumber(input)
   result.list_name = extractListName(input)
-  
-  const lines = input.split('\n').filter(line => line.trim())
+
+  const lines = input.split('\n')
   result.stats.total_lines = lines.length
-  
+
   lines.forEach((line, index) => {
     const trimmed = line.trim()
-    
-    if (!trimmed || 
-        trimmed.length < 5 ||
-        trimmed.startsWith('كشف') || 
-        /(?:تواصل|واتساب|اتصال|رقم|للتواصل|موبايل|جوال)/i.test(trimmed) ||
-        trimmed.startsWith('ملاحظة') ||
-        /^[-=_#*]+$/.test(trimmed)) {
+
+    if (
+      !trimmed ||
+      trimmed.length < 5 ||
+      trimmed.startsWith('كشف') ||
+      /(?:تواصل|واتساب|اتصال|رقم|للتواصل|موبايل|جوال)/.test(trimmed) ||
+      trimmed.startsWith('ملاحظة') ||
+      /^[-=_#*]+$/.test(trimmed)
+    ) {
       result.stats.skipped++
       return
     }
-    
+
     try {
       const chassis = extractChassis(trimmed)
       const plate = extractPlate(trimmed)
       const color = extractColor(trimmed)
       const carName = extractCarName(trimmed)
-      
-      if (!chassis || chassis.digits.length < 4) {
+
+      if (!chassis || !chassis.digits || chassis.digits.length < 4) {
         result.errors.push(`السطر ${index + 1}: لم يتم العثور على رقم شاسي صحيح`)
         result.stats.skipped++
         return
       }
-      
+
       const vehicle: ParsedVehicle = {
         car_name: carName,
         chassis_full: chassis.full,
@@ -261,30 +265,32 @@ export function parseVehicleList(input: string): ParseResult {
         raw_line: trimmed,
         extra_details: trimmed
       }
-      
+
       if (plate) {
         vehicle.plate_full = plate.full
         vehicle.plate_digits = plate.digits
       }
-      
+
       result.vehicles.push(vehicle)
       result.stats.parsed++
-      
-    } catch (error) {
-      result.errors.push(`السطر ${index + 1}: خطأ في المعالجة - ${error}`)
+
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      result.errors.push(`السطر ${index + 1}: خطأ في المعالجة - ${message}`)
       result.stats.skipped++
     }
   })
-  
+
   if (result.vehicles.length === 0) {
     result.success = false
     if (result.errors.length === 0) {
       result.errors.push('لم يتم معالجة أي عربية')
     }
   }
-  
+
   return result
 }
+
 
 /**
  * معاينة النتائج قبل الحفظ
