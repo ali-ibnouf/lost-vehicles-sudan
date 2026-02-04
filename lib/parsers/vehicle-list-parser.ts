@@ -34,7 +34,7 @@ function normalizeDigits(input: string): string {
 }
 
 // ✅ استخراج رقم المسؤول
-function extractContactNumber(text: string): string | null {
+function extractContactNumber(text: string): string | undefined {
   const patterns = [
     /(?:تواصل|واتساب|اتصال|رقم|للتواصل|موبايل|جوال)[:\s]*([+0-9]{10,14})/i,
     /\b(0[0-9]{9})\b/,
@@ -53,11 +53,11 @@ function extractContactNumber(text: string): string | null {
     }
   }
   
-  return null
+  return undefined
 }
 
 // ✅ استخراج اسم الكشف
-function extractListName(text: string): string | null {
+function extractListName(text: string): string | undefined {
   const patterns = [
     /كشف\s*[:\s]*\(?([A-Z0-9]+)\)?/i,
     /قائمة\s*[:\s]*([^\n]+)/i,
@@ -71,7 +71,7 @@ function extractListName(text: string): string | null {
     }
   }
   
-  return null
+  return undefined
 }
 
 // استخراج الألوان
@@ -211,9 +211,7 @@ export function parseVehicleList(input: string): ParseResult {
       total_lines: 0,
       parsed: 0,
       skipped: 0
-    },
-    contact_number: undefined,
-    list_name: undefined
+    }
   }
 
   if (!input || !input.trim()) {
@@ -222,7 +220,7 @@ export function parseVehicleList(input: string): ParseResult {
     return result
   }
 
-  // استخراج رقم المسؤول واسم الكشف
+  // ✅ استخراج رقم المسؤول واسم الكشف
   result.contact_number = extractContactNumber(input)
   result.list_name = extractListName(input)
 
