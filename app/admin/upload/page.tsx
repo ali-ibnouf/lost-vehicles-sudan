@@ -33,8 +33,8 @@ export default function AdminUploadPage() {
       setManualContact(result.contact_number)
     }
 
-    if (!result.success) {
-      alert('تحذير: بعض السطور لم تُعالج\n' + result.errors.slice(0, 3).join('\n'))
+    if (!result.success && result.errors.length > 0) {
+      alert('تحذير: بعض السطور لم تُعالج\n' + result.errors.slice(0, 5).join('\n'))
     }
   }
 
@@ -45,7 +45,7 @@ export default function AdminUploadPage() {
       return
     }
 
-    // الحصول على رقم المسؤول (يدوي أو تلقائي)
+    // ✅ الحصول على رقم المسؤول (يدوي أو تلقائي)
     const contactNumber = manualContact || parseResult.contact_number || null
     
     if (!contactNumber) {
@@ -73,7 +73,7 @@ export default function AdminUploadPage() {
       let errorCount = 0
       const errors: string[] = []
 
-      // رفع كل عربية مع رقم المسؤول
+      // ✅ رفع كل عربية مع كل المعلومات
       for (let i = 0; i < parseResult.vehicles.length; i++) {
         const vehicle = parseResult.vehicles[i]
         
@@ -82,21 +82,25 @@ export default function AdminUploadPage() {
             .from('found_vehicles')
             .insert({
               car_name: vehicle.car_name,
-              chassis_full: vehicle.chassis_full,
-              chassis_digits: vehicle.chassis_digits,
+              chassis_full: vehicle.chassis_full || null,
+              chassis_digits: vehicle.chassis_digits || null,  // ✅ اختياري
               plate_full: vehicle.plate_full || null,
               plate_digits: vehicle.plate_digits || null,
               color: vehicle.color || null,
               extra_details: vehicle.extra_details,
-              source: parseResult.list_name || 'admin_upload',
-              uploaded_by: contactNumber,  // ✅ رقم المسؤول
-              contact_number: contactNumber, // ✅ نسخة إضافية (اختياري)
+              source: parseResult.list_name || 'admin_upload',  // ✅ اسم الكشف
+              contact_number: contactNumber,                     // ✅ رقم المسؤول
+              uploaded_by: contactNumber || 'admin',            // ✅ رقم المسؤول
               uploaded_at: new Date().toISOString()
             })
 
           if (error) {
             if (error.code === '23505') {
-              errors.push(`السطر ${vehicle.line_number}: شاسي ${vehicle.chassis_digits} موجود مسبقاً`)
+              // تكرار
+              const duplicateInfo = vehicle.chassis_digits 
+                ? `شاسي ${vehicle.chassis_digits}` 
+                : `لوحة ${vehicle.plate_full}`
+              errors.push(`السطر ${vehicle.line_number}: ${duplicateInfo} موجود مسبقاً`)
             } else {
               errors.push(`السطر ${vehicle.line_number}: ${error.message}`)
             }
@@ -152,8 +156,8 @@ export default function AdminUploadPage() {
   const exampleText = `كشف (A6)
 
 1/ هايس تايوتا (ابيض) شاسي 200046160
-2/ شاسي 00172844 لوحة 52938 خ1
-3/ دبدوب (ابيض) شاسي 047837
+2/ دبدوب لوحة 63566 خ3
+3/ كلك شاسي 047837 لوحة 55643 / خ1
 
 تواصل واتساب 0999773431`
 
@@ -225,8 +229,8 @@ export default function AdminUploadPage() {
                   <ul className="space-y-1 text-gray-700 text-xs">
                     <li>• ضع رقم المسؤول في الكشف (مثال: تواصل واتساب 0999773431)</li>
                     <li>• سيتم حفظ الرقم مع <strong>كل عربية</strong> في الكشف</li>
-                    <li>• يمكنك تعديل الرقم يدوياً بعد المعالجة</li>
-                    <li>• يدعم اللوحات بالحروف: "خ 12345" أو "12345 خ ع"</li>
+                    <li>• يدعم: شاسي فقط، لوحة فقط، أو الاثنين معاً</li>
+                    <li>• اللوحات السودانية: "63566 خ3"، "55643 / خ1"، "7072 خ أ ب"</li>
                   </ul>
                 </div>
               </CardContent>
@@ -344,7 +348,9 @@ export default function AdminUploadPage() {
                       {parseResult.vehicles.slice(0, 10).map((vehicle, i) => (
                         <div key={i} className="p-3 bg-gray-50 rounded-lg text-sm border-r-4 border-green-500">
                           <p className="font-bold">{vehicle.car_name}</p>
-                          <p className="text-gray-600">شاسي: {vehicle.chassis_digits}</p>
+                          {vehicle.chassis_digits && (
+                            <p className="text-gray-600">شاسي: {vehicle.chassis_digits}</p>
+                          )}
                           {vehicle.plate_full && (
                             <p className="text-gray-600">لوحة: {vehicle.plate_full}</p>
                           )}
@@ -420,10 +426,12 @@ export default function AdminUploadPage() {
                   </div>
 
                   <div className="mt-6 p-4 bg-green-50 rounded-lg">
-                    <p className="font-medium text-green-800 mb-2">✅ ميزة جديدة:</p>
-                    <p className="text-green-700 text-xs">
-                      رقم المسؤول سيُحفظ مع <strong>كل عربية</strong> في الكشف، مما يسهل التواصل والمتابعة لاحقاً
-                    </p>
+                    <p className="font-medium text-green-800 mb-2">✅ الميزات:</p>
+                    <ul className="text-green-700 text-xs space-y-1">
+                      <li>• يقبل: شاسي فقط، لوحة فقط، أو الاثنين</li>
+                      <li>• رقم المسؤول يُحفظ مع كل عربية</li>
+                      <li>• اللوحات السودانية: "63566 خ3"، "7072 خ أ ب"</li>
+                    </ul>
                   </div>
                 </CardContent>
               </Card>
