@@ -1,6 +1,6 @@
 // ===================================
 // lib/parsers/vehicle-list-parser.ts
-// Parser محدث - مع رقم المسؤول واسم الكشف
+// Parser محدث - يدعم كل أنماط اللوحات السودانية
 // ===================================
 
 export type ParsedVehicle = {
@@ -19,8 +19,8 @@ export type ParseResult = {
   success: boolean
   vehicles: ParsedVehicle[]
   errors: string[]
-  contact_number?: string  // ✅ رقم المسؤول
-  list_name?: string       // ✅ اسم الكشف
+  contact_number?: string
+  list_name?: string
   stats: {
     total_lines: number
     parsed: number
@@ -33,7 +33,7 @@ function normalizeDigits(input: string): string {
   return input.replace(/[^0-9]/g, '')
 }
 
-// ✅ استخراج رقم المسؤول
+// استخراج رقم المسؤول
 function extractContactNumber(text: string): string | undefined {
   const patterns = [
     /(?:تواصل|واتساب|اتصال|رقم|للتواصل|موبايل|جوال)[:\s]*([+0-9]{10,14})/i,
@@ -56,7 +56,7 @@ function extractContactNumber(text: string): string | undefined {
   return undefined
 }
 
-// ✅ استخراج اسم الكشف
+// استخراج اسم الكشف
 function extractListName(text: string): string | undefined {
   const patterns = [
     /كشف\s*[:\s]*\(?([A-Z0-9]+)\)?/i,
@@ -90,7 +90,7 @@ function extractColor(text: string): string | undefined {
   return undefined
 }
 
-// استخراج رقم الشاسي - محسّن
+// استخراج رقم الشاسي
 function extractChassis(text: string): { full?: string; digits: string } | null {
   const chassisMatch = text.match(/شاسي[:\s]*([0-9A-Za-z]+)/i)
   if (chassisMatch) {
@@ -122,56 +122,81 @@ function extractChassis(text: string): { full?: string; digits: string } | null 
   return null
 }
 
-// استخراج رقم اللوحة - محسّن
+// ✅ استخراج رقم اللوحة - محسّن للأنماط السودانية
 function extractPlate(text: string): { full?: string; digits: string } | null {
-  const plateMatch1 = text.match(/لوحة[:\s]*([0-9]+)\s*([أ-ي\s]*)/i)
-  if (plateMatch1) {
-    const number = plateMatch1[1]
-    const letters = plateMatch1[2]?.trim() || ''
-    const full = letters ? `${number} ${letters}` : number
-    const digits = normalizeDigits(number)
-    if (digits.length >= 3) {
-      return { full, digits }
-    }
-  }
+  // نظف النص من "/" و"لوحة"
+  let cleaned = text.replace(/لوحة[:\s]*/gi, '').replace(/\s*\/\s*/g, ' ').trim()
   
-  const plateMatch2 = text.match(/(\d{3,})\s*([أ-ي]+)\s*([أ-ي]*)/i)
-  if (plateMatch2) {
-    const number = plateMatch2[1]
-    const letter1 = plateMatch2[2]
-    const letter2 = plateMatch2[3] || ''
-    const full = letter2 ? `${number} ${letter1} ${letter2}` : `${number} ${letter1}`
+  // نمط 1: رقم + 3 حروف (مثل: 7072 خ أ ب)
+  let match = cleaned.match(/(\d{3,})\s+([أ-ي]+)\s+([أ-ي]+)\s+([أ-ي]+)/i)
+  if (match) {
+    const number = match[1]
+    const l1 = match[2]
+    const l2 = match[3]
+    const l3 = match[4]
+    const full = `${number} ${l1} ${l2} ${l3}`
     const digits = normalizeDigits(number)
     return { full, digits }
   }
   
-  const plateMatch3 = text.match(/([أ-ي]+)\s*(\d{3,})/i)
-  if (plateMatch3) {
-    const letter = plateMatch3[1]
-    const number = plateMatch3[2]
-    const full = `${letter} ${number}`
+  // نمط 2: رقم + 2 حرف + رقم (مثل: 11111 ب ح 8)
+  match = cleaned.match(/(\d{3,})\s+([أ-ي]+)\s+([أ-ي]+)\s+(\d+)/i)
+  if (match) {
+    const number = match[1]
+    const l1 = match[2]
+    const l2 = match[3]
+    const extra = match[4]
+    const full = `${number} ${l1} ${l2} ${extra}`
     const digits = normalizeDigits(number)
     return { full, digits }
   }
   
-  const plateMatch4 = text.match(/(\d{4,})\s*ب\s*ح\s*(\d)/i)
-  if (plateMatch4) {
-    const full = `${plateMatch4[1]} ب ح${plateMatch4[2]}`
-    const digits = normalizeDigits(plateMatch4[1])
+  // نمط 3: رقم + 2 حرف (مثل: 12345 خ ع)
+  match = cleaned.match(/(\d{3,})\s+([أ-ي]+)\s+([أ-ي]+)(?:\s|$)/i)
+  if (match) {
+    const number = match[1]
+    const l1 = match[2]
+    const l2 = match[3]
+    const full = `${number} ${l1} ${l2}`
+    const digits = normalizeDigits(number)
+    return { full, digits }
+  }
+  
+  // نمط 4: رقم + حرف + رقم (مثل: 63566 خ3 أو 55643 خ1)
+  match = cleaned.match(/(\d{3,})\s*([أ-ي]+)(\d+)/i)
+  if (match) {
+    const number = match[1]
+    const letter = match[2]
+    const extra = match[3]
+    const full = `${number} ${letter}${extra}`
+    const digits = normalizeDigits(number)
+    return { full, digits }
+  }
+  
+  // نمط 5: رقم + حرف (مثل: 69803 خ أو 69803 / خ)
+  match = cleaned.match(/(\d{3,})\s+([أ-ي]+)(?:\s|$)/i)
+  if (match) {
+    const number = match[1]
+    const letter = match[2]
+    const full = `${number} ${letter}`
+    const digits = normalizeDigits(number)
     return { full, digits }
   }
   
   return null
 }
 
-// استخراج اسم العربية - محسّن
+// استخراج اسم العربية
 function extractCarName(text: string): string {
   let cleaned = text.replace(/^\d+[\/\-)\.]?\s*/, '').trim()
   
+  // إزالة معلومات الشاسي واللوحة
   cleaned = cleaned
     .replace(/شاسي[:\s]*[0-9A-Za-z]+/gi, '')
-    .replace(/لوحة[:\s]*[0-9أ-ي\s]+/gi, '')
-    .replace(/\d{3,}\s*[أ-ي]+(\s*[أ-ي]+)?/g, '')
+    .replace(/لوحة[:\s]*[0-9أ-ي\s\/]+/gi, '')
+    // إزالة أنماط اللوحات المختلفة
+    .replace(/\d{3,}\s*\/?\s*[أ-ي]+\s*\d*/g, '')
+    .replace(/\d{3,}\s+[أ-ي]+\s+[أ-ي]+\s*\d*/g, '')
     .replace(/[أ-ي]+\s*\d{3,}/g, '')
     .trim()
   
@@ -220,7 +245,6 @@ export function parseVehicleList(input: string): ParseResult {
     return result
   }
 
-  // ✅ استخراج رقم المسؤول واسم الكشف
   result.contact_number = extractContactNumber(input)
   result.list_name = extractListName(input)
 
@@ -288,7 +312,6 @@ export function parseVehicleList(input: string): ParseResult {
 
   return result
 }
-
 
 /**
  * معاينة النتائج قبل الحفظ
