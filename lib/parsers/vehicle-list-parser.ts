@@ -1,12 +1,12 @@
 // ===================================
 // lib/parsers/vehicle-list-parser.ts
-// Parser محدث - يدعم كل أنماط اللوحات السودانية
+// Parser محدث - يقبل اللوحة بدون شاسي
 // ===================================
 
 export type ParsedVehicle = {
   car_name: string
   chassis_full?: string
-  chassis_digits: string
+  chassis_digits?: string  // ✅ اختياري الآن
   plate_full?: string
   plate_digits?: string
   color?: string
@@ -122,7 +122,7 @@ function extractChassis(text: string): { full?: string; digits: string } | null 
   return null
 }
 
-// ✅ استخراج رقم اللوحة - محسّن للأنماط السودانية
+// استخراج رقم اللوحة - محسّن للأنماط السودانية
 function extractPlate(text: string): { full?: string; digits: string } | null {
   // نظف النص من "/" و"لوحة"
   let cleaned = text.replace(/لوحة[:\s]*/gi, '').replace(/\s*\/\s*/g, ' ').trim()
@@ -272,22 +272,36 @@ export function parseVehicleList(input: string): ParseResult {
       const color = extractColor(trimmed)
       const carName = extractCarName(trimmed)
 
-      if (!chassis || !chassis.digits || chassis.digits.length < 4) {
-        result.errors.push(`السطر ${index + 1}: لم يتم العثور على رقم شاسي صحيح`)
+      // ✅ التغيير الرئيسي: قبول اللوحة بدون شاسي
+      // يجب أن يكون هناك شاسي أو لوحة على الأقل
+      if (!chassis && !plate) {
+        result.errors.push(`السطر ${index + 1}: لم يتم العثور على شاسي أو لوحة`)
+        result.stats.skipped++
+        return
+      }
+
+      // إذا وُجد الشاسي فقط، تحقق من طوله
+      if (chassis && chassis.digits.length < 4) {
+        result.errors.push(`السطر ${index + 1}: رقم الشاسي قصير جداً`)
         result.stats.skipped++
         return
       }
 
       const vehicle: ParsedVehicle = {
         car_name: carName,
-        chassis_full: chassis.full,
-        chassis_digits: chassis.digits,
         color,
         line_number: index + 1,
         raw_line: trimmed,
         extra_details: trimmed
       }
 
+      // ✅ إضافة الشاسي إذا وُجد
+      if (chassis) {
+        vehicle.chassis_full = chassis.full
+        vehicle.chassis_digits = chassis.digits
+      }
+
+      // ✅ إضافة اللوحة إذا وُجدت
       if (plate) {
         vehicle.plate_full = plate.full
         vehicle.plate_digits = plate.digits
@@ -321,7 +335,9 @@ export function previewParsedVehicles(vehicles: ParsedVehicle[]): string {
   
   vehicles.slice(0, 5).forEach((v, i) => {
     preview += `${i + 1}. ${v.car_name}\n`
-    preview += `   شاسي: ${v.chassis_digits}\n`
+    if (v.chassis_digits) {
+      preview += `   شاسي: ${v.chassis_digits}\n`
+    }
     if (v.plate_full) {
       preview += `   لوحة: ${v.plate_full}\n`
     }
@@ -343,14 +359,26 @@ export function previewParsedVehicles(vehicles: ParsedVehicle[]): string {
  */
 export function checkDuplicates(vehicles: ParsedVehicle[]): string[] {
   const duplicates: string[] = []
-  const seen = new Set<string>()
+  const seenChassis = new Set<string>()
+  const seenPlate = new Set<string>()
   
   vehicles.forEach((v) => {
-    const key = v.chassis_digits
-    if (seen.has(key)) {
-      duplicates.push(`السطر ${v.line_number}: شاسي مكرر ${v.chassis_digits}`)
-    } else {
-      seen.add(key)
+    // ✅ تحقق من تكرار الشاسي (إذا وُجد)
+    if (v.chassis_digits) {
+      if (seenChassis.has(v.chassis_digits)) {
+        duplicates.push(`السطر ${v.line_number}: شاسي مكرر ${v.chassis_digits}`)
+      } else {
+        seenChassis.add(v.chassis_digits)
+      }
+    }
+    
+    // ✅ تحقق من تكرار اللوحة (إذا وُجدت)
+    if (v.plate_digits) {
+      if (seenPlate.has(v.plate_digits)) {
+        duplicates.push(`السطر ${v.line_number}: لوحة مكررة ${v.plate_full || v.plate_digits}`)
+      } else {
+        seenPlate.add(v.plate_digits)
+      }
     }
   })
   
