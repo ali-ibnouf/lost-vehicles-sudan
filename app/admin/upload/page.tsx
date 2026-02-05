@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { supabase } from '@/lib/supabase'
 import { parseVehicleList, checkDuplicates, type ParseResult } from '@/lib/parsers/vehicle-list-parser'
 
 export default function AdminUploadPage() {
@@ -28,7 +27,6 @@ export default function AdminUploadPage() {
     setParseResult(result)
     setShowPreview(true)
 
-    // إذا تم استخراج رقم تلقائياً، ضعه في الحقل اليدوي
     if (result.contact_number && !manualContact) {
       setManualContact(result.contact_number)
     }
@@ -38,14 +36,13 @@ export default function AdminUploadPage() {
     }
   }
 
-  // حفظ في Database
+  // ✅ حفظ عبر API Route (يستخدم Service Role Key)
   const handleSave = async () => {
     if (!parseResult || parseResult.vehicles.length === 0) {
       alert('لا توجد عربات للحفظ')
       return
     }
 
-    // ✅ الحصول على رقم المسؤول (يدوي أو تلقائي)
     const contactNumber = manualContact || parseResult.contact_number || null
     
     if (!contactNumber) {
@@ -53,7 +50,6 @@ export default function AdminUploadPage() {
       if (!proceed) return
     }
 
-    // التحقق من التكرار
     const duplicates = checkDuplicates(parseResult.vehicles)
     if (duplicates.length > 0) {
       const proceed = confirm(
@@ -69,62 +65,34 @@ export default function AdminUploadPage() {
     setUploadProgress({ current: 0, total: parseResult.vehicles.length })
 
     try {
-      let successCount = 0
-      let errorCount = 0
-      const errors: string[] = []
+      // ✅ استخدام API Route بدلاً من supabase مباشرة
+      const response = await fetch('/api/admin/upload-vehicles', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          vehicles: parseResult.vehicles,
+          contactNumber,
+          listName: parseResult.list_name || 'admin_upload'
+        })
+      })
 
-      // ✅ رفع كل عربية مع كل المعلومات
-      for (let i = 0; i < parseResult.vehicles.length; i++) {
-        const vehicle = parseResult.vehicles[i]
-        
-        try {
-          const { error } = await supabase
-            .from('found_vehicles')
-            .insert({
-              car_name: vehicle.car_name,
-              chassis_full: vehicle.chassis_full || null,
-              chassis_digits: vehicle.chassis_digits || null,  // ✅ اختياري
-              plate_full: vehicle.plate_full || null,
-              plate_digits: vehicle.plate_digits || null,
-              color: vehicle.color || null,
-              extra_details: vehicle.extra_details,
-              source: parseResult.list_name || 'admin_upload',  // ✅ اسم الكشف
-              contact_number: contactNumber,                     // ✅ رقم المسؤول
-              uploaded_by: contactNumber || 'admin',            // ✅ رقم المسؤول
-              uploaded_at: new Date().toISOString()
-            })
+      const data = await response.json()
 
-          if (error) {
-            if (error.code === '23505') {
-              // تكرار
-              const duplicateInfo = vehicle.chassis_digits 
-                ? `شاسي ${vehicle.chassis_digits}` 
-                : `لوحة ${vehicle.plate_full}`
-              errors.push(`السطر ${vehicle.line_number}: ${duplicateInfo} موجود مسبقاً`)
-            } else {
-              errors.push(`السطر ${vehicle.line_number}: ${error.message}`)
-            }
-            errorCount++
-          } else {
-            successCount++
-          }
-        } catch (err: any) {
-          errors.push(`السطر ${vehicle.line_number}: ${err.message}`)
-          errorCount++
-        }
-
-        setUploadProgress({ current: i + 1, total: parseResult.vehicles.length })
+      if (!response.ok) {
+        throw new Error(data.error || 'حدث خطأ في الرفع')
       }
 
       // عرض النتيجة
       let message = `✅ تم الرفع بنجاح!\n\n`
-      message += `✅ نجح: ${successCount} عربية\n`
-      if (errorCount > 0) {
-        message += `❌ فشل: ${errorCount}\n\n`
-        if (errors.length > 0) {
-          message += 'الأخطاء:\n' + errors.slice(0, 10).join('\n')
-          if (errors.length > 10) {
-            message += `\n... و ${errors.length - 10} خطأ آخر`
+      message += `✅ نجح: ${data.successCount} عربية\n`
+      if (data.errorCount > 0) {
+        message += `❌ فشل: ${data.errorCount}\n\n`
+        if (data.errors && data.errors.length > 0) {
+          message += 'الأخطاء:\n' + data.errors.slice(0, 10).join('\n')
+          if (data.errors.length > 10) {
+            message += `\n... و ${data.errors.length - 10} خطأ آخر`
           }
         }
       }
@@ -137,8 +105,7 @@ export default function AdminUploadPage() {
 
       alert(message)
 
-      // إعادة تعيين النموذج
-      if (successCount > 0) {
+      if (data.successCount > 0) {
         setRawText('')
         setParseResult(null)
         setShowPreview(false)
@@ -164,7 +131,6 @@ export default function AdminUploadPage() {
   return (
     <div className="min-h-screen bg-gray-50 p-4" dir="rtl">
       <div className="container max-w-7xl mx-auto py-8">
-        {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-3xl font-bold">رفع كشوفات العربات الموجودة</h1>
@@ -241,7 +207,6 @@ export default function AdminUploadPage() {
           <div className="space-y-6">
             {showPreview && parseResult && (
               <>
-                {/* Contact Info */}
                 {(parseResult.contact_number || parseResult.list_name) && (
                   <Card className="border-green-200 bg-green-50">
                     <CardContent className="p-4 space-y-2">
@@ -262,7 +227,6 @@ export default function AdminUploadPage() {
                   </Card>
                 )}
 
-                {/* Manual Contact Input */}
                 <Card className="border-blue-200">
                   <CardHeader>
                     <CardTitle className="text-base flex items-center gap-2">
@@ -278,12 +242,11 @@ export default function AdminUploadPage() {
                       className="font-mono"
                     />
                     <p className="text-xs text-gray-600">
-                      ⚠️ هذا الرقم سيُحفظ مع <strong>كل عربية</strong> في هذا الكشف ({parseResult.vehicles.length} عربية)
+                      ⚠️ هذا الرقم سيُحفظ مع <strong>كل عربية</strong> ({parseResult.vehicles.length} عربية)
                     </p>
                   </CardContent>
                 </Card>
 
-                {/* Stats */}
                 <div className="grid grid-cols-3 gap-4">
                   <Card>
                     <CardContent className="p-4 text-center">
@@ -311,7 +274,6 @@ export default function AdminUploadPage() {
                   </Card>
                 </div>
 
-                {/* Errors - Only if less than 50 */}
                 {parseResult.errors.length > 0 && parseResult.errors.length < 50 && (
                   <Card className="border-amber-200">
                     <CardHeader>
@@ -335,7 +297,6 @@ export default function AdminUploadPage() {
                   </Card>
                 )}
 
-                {/* Preview */}
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
@@ -369,7 +330,6 @@ export default function AdminUploadPage() {
                       )}
                     </div>
 
-                    {/* Save Button */}
                     <div className="mt-6">
                       <Button 
                         onClick={handleSave}
@@ -378,20 +338,11 @@ export default function AdminUploadPage() {
                         size="lg"
                       >
                         {loading ? (
-                          <>
-                            <span className="ml-2">
-                              جاري الرفع... ({uploadProgress.current}/{uploadProgress.total})
-                            </span>
-                          </>
+                          <span>جاري الرفع...</span>
                         ) : (
                           <>
                             <Save className="w-5 h-5 ml-2" />
                             حفظ {parseResult.vehicles.length} عربية
-                            {(manualContact || parseResult.contact_number) && (
-                              <span className="mr-2">
-                                مع رقم المسؤول
-                              </span>
-                            )}
                           </>
                         )}
                       </Button>
@@ -399,42 +350,6 @@ export default function AdminUploadPage() {
                   </CardContent>
                 </Card>
               </>
-            )}
-
-            {/* Instructions */}
-            {!showPreview && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>كيفية الاستخدام</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3 text-sm">
-                  <div className="flex gap-3">
-                    <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold flex-shrink-0">1</div>
-                    <p>الصق الكشف الكامل (مع رقم المسؤول في الأسفل)</p>
-                  </div>
-                  <div className="flex gap-3">
-                    <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold flex-shrink-0">2</div>
-                    <p>اضغط "معالجة ومعاينة"</p>
-                  </div>
-                  <div className="flex gap-3">
-                    <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold flex-shrink-0">3</div>
-                    <p>تحقق من رقم المسؤول (سيُحفظ مع كل عربية)</p>
-                  </div>
-                  <div className="flex gap-3">
-                    <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold flex-shrink-0">4</div>
-                    <p>اضغط "حفظ"</p>
-                  </div>
-
-                  <div className="mt-6 p-4 bg-green-50 rounded-lg">
-                    <p className="font-medium text-green-800 mb-2">✅ الميزات:</p>
-                    <ul className="text-green-700 text-xs space-y-1">
-                      <li>• يقبل: شاسي فقط، لوحة فقط، أو الاثنين</li>
-                      <li>• رقم المسؤول يُحفظ مع كل عربية</li>
-                      <li>• اللوحات السودانية: "63566 خ3"، "7072 خ أ ب"</li>
-                    </ul>
-                  </div>
-                </CardContent>
-              </Card>
             )}
           </div>
         </div>
